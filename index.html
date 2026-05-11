@@ -284,7 +284,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
   <div id="page-dashboard" class="page active">
     <div class="page-title">Today's Overview</div>
 
-    <div id="plan-container"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem"><div style="font-size:0.68rem;text-transform:uppercase;letter-spacing:0.15em;color:var(--accent);font-weight:600">Today's Plan</div><button onclick="refreshPlan()" style="background:none;border:1px solid var(--border);border-radius:5px;padding:0.2rem 0.6rem;color:#6666aa;font-size:0.72rem;cursor:pointer">↻ Refresh</button></div><div id="plan-container"></div>
     <div id="insight-container"></div>
     <div id="sunday-container"></div>
 
@@ -595,21 +595,27 @@ async function dbDel(table,id){await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${i
 
 // ─── CLAUDE ───────────────────────────────────────────────────────────────────
 async function claude(messages, system='', img64=null, imgType='image/jpeg'){
-  const msgs = messages.map((m,i) => {
-    if(m.role==='user' && img64 && i===messages.length-1){
-      return {role:'user',content:[{type:'image',source:{type:'base64',media_type:imgType,data:img64}},{type:'text',text:m.content}]};
-    }
-    return m;
-  });
-  const body = {model:'claude-sonnet-4-20250514',max_tokens:1000,messages:msgs};
-  if(system) body.system = system;
-  const r = await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','x-api-key':CFG.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify(body)
-  });
-  const d = await r.json();
-  return d.content?.[0]?.text || 'No response';
+  try {
+    if(!CFG.apiKey) return 'ERROR: No API key. Go to Settings and enter your Anthropic API key.';
+    const msgs = messages.map((m,i) => {
+      if(m.role==='user' && img64 && i===messages.length-1){
+        return {role:'user',content:[{type:'image',source:{type:'base64',media_type:imgType,data:img64}},{type:'text',text:m.content}]};
+      }
+      return m;
+    });
+    const body = {model:'claude-sonnet-4-20250514',max_tokens:1000,messages:msgs};
+    if(system) body.system = system;
+    const r = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':CFG.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify(body)
+    });
+    const d = await r.json();
+    if(d.error) return 'API ERROR: '+d.error.type+' - '+d.error.message;
+    return d.content?.[0]?.text || 'API returned empty response';
+  } catch(e) {
+    return 'NETWORK ERROR: '+e.message;
+  }
 }
 
 // ─── SETUP ────────────────────────────────────────────────────────────────────
@@ -786,6 +792,13 @@ async function buildWeightChart(){
     <text x="2" y="${H-2}" fill="#444458" font-size="8" font-family="DM Sans">${min.toFixed(1)}</text>
     <text x="${W-2}" y="${H/2}" fill="var(--accent)" font-size="9" font-family="DM Sans" text-anchor="end">${vals[vals.length-1]} lbs</text>
   `;
+}
+
+async function refreshPlan(){
+  const cacheKey='forge_plan_'+new Date().toISOString().split('T')[0];
+  localStorage.removeItem(cacheKey);
+  refreshDashboard();
+  toast('Refreshing Today's Plan...');
 }
 
 async function buildDailyPlan(wks,meals,weekMiles,mileTarget,streak){
