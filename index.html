@@ -792,7 +792,7 @@ async function buildDailyPlan(wks,meals,weekMiles,mileTarget,streak){
   const container=document.getElementById('plan-container');
   const cacheKey='forge_plan_'+new Date().toISOString().split('T')[0];
   const cached=localStorage.getItem(cacheKey);
-  if(cached){container.innerHTML=cached;return;}
+  if(cached&&!cached.includes('No response')&&!cached.includes('loading-dots')){container.innerHTML=cached;return;}
   container.innerHTML=`<div class="plan-card"><div class="plan-badge">Today's Plan</div><div class="plan-text"><div class="dots"><span></span><span></span><span></span></div></div></div>`;
   const dow=new Date().toLocaleDateString('en-US',{weekday:'long'});
   const isWeekend=new Date().getDay()===0||new Date().getDay()===6;
@@ -808,7 +808,7 @@ async function buildInsight(wks,meals,runs){
   const container=document.getElementById('insight-container');
   const cacheKey='forge_insight_'+new Date().toISOString().split('T')[0];
   const cached=localStorage.getItem(cacheKey);
-  if(cached){container.innerHTML=cached;return;}
+  if(cached&&!cached.includes('No response')&&!cached.includes('loading-dots')){container.innerHTML=cached;return;}
   if(wks.length===0&&runs.length===0) return;
   const system=`You are a fitness AI coach. Give ONE sharp, specific insight in 1-2 sentences. No fluff. No markdown.`;
   const prompt=`Based on: ${wks.length} workouts this week, ${runs.length} total runs, protein today: ${meals.reduce((s,m)=>s+(m.protein_g||0),0)}g / ${CFG.proteinTarget}g target. Give one specific, actionable insight or observation.`;
@@ -824,7 +824,7 @@ async function buildSundayCard(runs,weekMiles){
   if(!isSunday){container.innerHTML='';return;}
   const cacheKey='forge_sunday_'+new Date().toISOString().split('T')[0];
   const cached=localStorage.getItem(cacheKey);
-  if(cached){container.innerHTML=cached;return;}
+  if(cached&&!cached.includes('No response')&&!cached.includes('loading-dots')){container.innerHTML=cached;return;}
   const recentMiles=runs.slice(0,5).map(r=>r.distance_miles||0);
   const avgMile=recentMiles.length?recentMiles.reduce((a,b)=>a+b,0)/recentMiles.length:0;
   const system=`You are a half marathon coach. Give a specific Sunday long run recommendation. Be direct and practical. No markdown.`;
