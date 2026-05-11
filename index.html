@@ -798,7 +798,7 @@ async function refreshPlan(){
   const cacheKey='forge_plan_'+new Date().toISOString().split('T')[0];
   localStorage.removeItem(cacheKey);
   refreshDashboard();
-  toast('Refreshing Today's Plan...');
+  toast('Refreshing plan...');
 }
 
 async function buildDailyPlan(wks,meals,weekMiles,mileTarget,streak){
