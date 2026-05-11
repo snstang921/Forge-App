@@ -468,6 +468,10 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
           <div class="ai-box-label">AI Nutrition Feedback</div>
           <div class="ai-box-text" id="meal-fb-text"></div>
         </div>
+        <div id="macro-correction-row" style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center">
+          <input id="macro-correction-input" class="chat-in" placeholder="Macros wrong? Tell the AI (e.g. 'this was a large portion' or 'no cheese')" style="font-size:0.8rem;" onkeydown="if(event.key==='Enter')correctMacros()" />
+          <button class="btn btn-ghost" style="white-space:nowrap;font-size:0.8rem" onclick="correctMacros()">Fix It</button>
+        </div>
       </div>
     </div>
 
@@ -1092,6 +1096,37 @@ Be realistic with estimates. Base on typical serving sizes.`;
       if(d.description&&!document.getElementById('m-desc').value) document.getElementById('m-desc').value=d.description;
       fbText.textContent='✓ Macros estimated from photo — review and edit if needed!';
     }catch{fbText.textContent='Couldn\'t auto-parse — please review the numbers below.';}
+}
+
+async function correctMacros(){
+  const feedback=document.getElementById('macro-correction-input').value.trim();
+  if(!feedback) return;
+  const desc=document.getElementById('m-desc').value;
+  const currentProtein=document.getElementById('m-protein').value;
+  const currentFiber=document.getElementById('m-fiber').value;
+  const currentCalories=document.getElementById('m-calories').value;
+  const currentCarbs=document.getElementById('m-carbs').value;
+
+  const fbText=document.getElementById('meal-fb-text');
+  fbText.innerHTML='<div class="dots"><span></span><span></span><span></span></div>';
+
+  const sys='You are a nutrition expert. Correct macro estimates based on user feedback. Return ONLY JSON, no other text.';
+  const prompt=`Meal: "${desc}". Current estimates: protein ${currentProtein}g, fiber ${currentFiber}g, calories ${currentCalories}, carbs ${currentCarbs}g. User correction: "${feedback}". Return corrected JSON:
+{"protein_g":0,"fiber_g":0,"calories":0,"carbs_g":0,"explanation":"one sentence explanation of what changed"}`;
+
+  const raw=await claude([{role:'user',content:prompt}],sys,mealImg64,mealImgType);
+  try{
+    const clean=raw.replace(/\`\`\`json|\`\`\`/g,'').trim();
+    const d=JSON.parse(clean);
+    if(d.protein_g!==undefined) document.getElementById('m-protein').value=d.protein_g;
+    if(d.fiber_g!==undefined) document.getElementById('m-fiber').value=d.fiber_g;
+    if(d.calories!==undefined) document.getElementById('m-calories').value=d.calories;
+    if(d.carbs_g!==undefined) document.getElementById('m-carbs').value=d.carbs_g;
+    fbText.textContent='✓ Macros updated! '+( d.explanation||'');
+    document.getElementById('macro-correction-input').value='';
+  }catch{
+    fbText.textContent='Couldn\'t parse correction — try rephrasing (e.g. "portion was smaller" or "add 2 eggs")';
+  }
 }
 
 async function saveMeal(){
