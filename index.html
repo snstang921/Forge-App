@@ -361,11 +361,11 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min
     <div class="card">
       <div class="card-title"><span>📸</span> Import from Trainwell Screenshot</div>
       <div class="upload-zone" id="wk-upload">
-        <input type="file" accept="image/*" onchange="parseWorkoutShot(event)" />
+        <input type="file" accept="image/*" multiple onchange="parseWorkoutShot(event)" />
         <div class="upload-icon">📱</div>
-        <div class="upload-hint">Drop your Trainwell screenshot here<br><strong>AI will extract all exercises</strong></div>
-        <img id="wk-preview" class="preview-img" />
+        <div class="upload-hint">Upload one or more Trainwell screenshots<br><strong>AI will extract all exercises from all images</strong></div>
       </div>
+      <div id="wk-preview-container"></div>
       <div id="wk-parse-box" style="display:none">
         <div class="ai-box" style="margin-top:0.875rem">
           <div class="ai-box-label">Parsing workout...</div>
@@ -854,18 +854,29 @@ async function buildSundayCard(runs,weekMiles){
 
 // ─── WORKOUT ──────────────────────────────────────────────────────────────────
 async function parseWorkoutShot(e){
-  const file=e.target.files[0];if(!file)return;
+  const files=Array.from(e.target.files);if(!files.length)return;
   const preview=document.getElementById('wk-preview');
-  const compressed=await compressImage(file);
-  preview.src=compressed;preview.style.display='block';
-  const img64=compressed.split(',')[1];
   const parseBox=document.getElementById('wk-parse-box');
-    const parseText=document.getElementById('wk-parse-text');
-    parseBox.style.display='block';
-    parseText.innerHTML='<div class="dots"><span></span><span></span><span></span></div>';
+  const parseText=document.getElementById('wk-parse-text');
+  parseBox.style.display='block';
+  parseText.innerHTML='<div class="dots"><span></span><span></span><span></span></div>';
 
-    const system=`You are parsing a Trainwell/Peloton Personal Trainer workout screenshot. Extract ALL workout information with extreme precision. Return ONLY valid JSON, no other text.`;
-    const prompt=`Parse this workout screenshot and return JSON in exactly this format:
+  // Show previews for all uploaded images
+  const previewContainer=document.getElementById('wk-preview-container');
+  previewContainer.innerHTML='';
+  const img64s=[];
+  for(const file of files){
+    const compressed=await compressImage(file);
+    const img=document.createElement('img');
+    img.src=compressed;
+    img.style.cssText='max-width:100%;max-height:150px;border-radius:8px;margin-top:0.5rem;display:block;';
+    previewContainer.appendChild(img);
+    img64s.push(compressed.split(',')[1]);
+  }
+
+  // Parse all images - send them one by one and combine results
+  const sys=`You are parsing Trainwell/Peloton Personal Trainer workout screenshots. Extract ALL workout information with extreme precision. Return ONLY valid JSON, no other text.`;
+  const prompt=`Parse this workout screenshot and return JSON in exactly this format:
 {
   "workoutName": "string",
   "workoutType": "Strength|Running|Cycling|Walking|Yoga|Rowing|Mixed",
@@ -882,44 +893,50 @@ async function parseWorkoutShot(e){
     {"name":"string","sets":1,"reps":10,"weight":"string or null","notes":"string or null"}
   ]
 }
-If there are no supersets, return empty array. If no standalone exercises, return empty array. Extract every single exercise shown.`;
+If there are no supersets return empty array. If no standalone exercises return empty array. Extract every single exercise shown. For time-based exercises use reps field for seconds (e.g. 30 for 0:30).`;
 
-    const raw=await claude([{role:'user',content:prompt}],system,img64,file.type);
-    parseText.textContent=raw;
-
-    // Try to parse and auto-populate
+  // Parse each image and merge results
+  let mergedData={workoutName:'',workoutType:'Strength',pelotonClasses:[],supersets:[],standaloneExercises:[]};
+  for(const img64 of img64s){
+    const raw=await claude([{role:'user',content:prompt}],sys,img64,'image/jpeg');
     try{
-      const clean=raw.replace(/```json|```/g,'').trim();
-      const data=JSON.parse(clean);
-      // Set workout name and type
-      if(data.workoutName) document.getElementById('wk-name').value=data.workoutName;
-      if(data.workoutType) document.getElementById('wk-type').value=data.workoutType;
-
-      // Clear existing exercises
-      document.getElementById('ex-list').innerHTML='';
-
-      // Add supersets
-      if(data.supersets&&data.supersets.length){
-        data.supersets.forEach(ss=>{
-          addSuperset(ss.repeats,ss.exercises);
-        });
-      }
-      // Add standalone exercises
-      if(data.standaloneExercises&&data.standaloneExercises.length){
-        data.standaloneExercises.forEach(ex=>{
-          addExRow(ex.name,`${ex.sets||1}×${ex.reps||''}${ex.weight?' × '+ex.weight:''}`,ex.reps||'',ex.weight||'',ex.notes||'');
-        });
-      }
-      // Handle Peloton classes as note
-      if(data.pelotonClasses&&data.pelotonClasses.length){
-        const classNote=data.pelotonClasses.map(c=>`${c.name}${c.instructor?' · '+c.instructor:''}`).join(', ');
-        const notes=document.getElementById('wk-notes');
-        if(!notes.value) notes.value=`Peloton classes: ${classNote}`;
-      }
-      parseText.textContent='✓ Workout parsed and populated below! Review and edit as needed.';
+      const clean=raw.replace(/\`\`\`json|\`\`\`/g,'').trim();
+      const d=JSON.parse(clean);
+      if(d.workoutName&&!mergedData.workoutName) mergedData.workoutName=d.workoutName;
+      if(d.workoutType&&mergedData.workoutType==='Strength') mergedData.workoutType=d.workoutType;
+      if(d.pelotonClasses) mergedData.pelotonClasses.push(...d.pelotonClasses);
+      if(d.supersets) mergedData.supersets.push(...d.supersets);
+      if(d.standaloneExercises) mergedData.standaloneExercises.push(...d.standaloneExercises);
     }catch(err){
-      parseText.textContent=raw+'\n\n(Auto-populate failed — please enter exercises manually)';
+      console.error('Parse error for image:',err);
     }
+  }
+
+  parseText.textContent=JSON.stringify(mergedData,null,2);
+
+  // Auto-populate workout fields
+  try{
+    const data=mergedData;
+    if(data.workoutName) document.getElementById('wk-name').value=data.workoutName;
+    if(data.workoutType) document.getElementById('wk-type').value=data.workoutType;
+    document.getElementById('ex-list').innerHTML='';
+    if(data.supersets&&data.supersets.length){
+      data.supersets.forEach(ss=>{ addSuperset(ss.repeats,ss.exercises); });
+    }
+    if(data.standaloneExercises&&data.standaloneExercises.length){
+      data.standaloneExercises.forEach(ex=>{
+        addExRow(ex.name,`${ex.sets||1}x${ex.reps||''}${ex.weight?' x '+ex.weight:''}`,ex.reps||'',ex.weight||'',ex.notes||'');
+      });
+    }
+    if(data.pelotonClasses&&data.pelotonClasses.length){
+      const classNote=data.pelotonClasses.map(c=>`${c.name}${c.instructor?' · '+c.instructor:''}`).join(', ');
+      const notes=document.getElementById('wk-notes');
+      if(!notes.value) notes.value=`Peloton classes: ${classNote}`;
+    }
+    parseText.textContent=`✓ Parsed ${files.length} screenshot${files.length>1?'s':''} — ${data.supersets.length} superset(s), ${data.standaloneExercises.length} exercise(s) found. Review and edit below!`;
+  }catch(err){
+    parseText.textContent='Auto-populate failed — please enter exercises manually. Error: '+err.message;
+  }
 }
 
 function addExRow(name='',detail='',reps='',weight='',notes=''){
