@@ -852,11 +852,10 @@ async function buildSundayCard(runs,weekMiles){
 async function parseWorkoutShot(e){
   const file=e.target.files[0];if(!file)return;
   const preview=document.getElementById('wk-preview');
-  const reader=new FileReader();
-  reader.onload=async(ev)=>{
-    preview.src=ev.target.result;preview.style.display='block';
-    const img64=ev.target.result.split(',')[1];
-    const parseBox=document.getElementById('wk-parse-box');
+  const compressed=await compressImage(file);
+  preview.src=compressed;preview.style.display='block';
+  const img64=compressed.split(',')[1];
+  const parseBox=document.getElementById('wk-parse-box');
     const parseText=document.getElementById('wk-parse-text');
     parseBox.style.display='block';
     parseText.innerHTML='<div class="dots"><span></span><span></span><span></span></div>';
@@ -917,8 +916,6 @@ If there are no supersets, return empty array. If no standalone exercises, retur
     }catch(err){
       parseText.textContent=raw+'\n\n(Auto-populate failed — please enter exercises manually)';
     }
-  };
-  reader.readAsDataURL(file);
 }
 
 function addExRow(name='',detail='',reps='',weight='',notes=''){
@@ -1037,15 +1034,46 @@ async function saveWorkout(){
 }
 
 // ─── NUTRITION ────────────────────────────────────────────────────────────────
+async function compressImage(file, maxSizeMB=4){
+  return new Promise((resolve)=>{
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      const img=new Image();
+      img.onload=()=>{
+        const canvas=document.createElement('canvas');
+        let w=img.width, h=img.height;
+        // Scale down if needed
+        const maxDim=1600;
+        if(w>maxDim||h>maxDim){
+          if(w>h){h=Math.round(h*(maxDim/w));w=maxDim;}
+          else{w=Math.round(w*(maxDim/h));h=maxDim;}
+        }
+        canvas.width=w; canvas.height=h;
+        const ctx=canvas.getContext('2d');
+        ctx.drawImage(img,0,0,w,h);
+        // Try quality 0.7 first, then lower if still too big
+        let quality=0.7;
+        let dataUrl=canvas.toDataURL('image/jpeg',quality);
+        while(dataUrl.length*0.75>maxSizeMB*1024*1024 && quality>0.2){
+          quality-=0.1;
+          dataUrl=canvas.toDataURL('image/jpeg',quality);
+        }
+        resolve(dataUrl);
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 async function parseMealPhoto(e){
   const file=e.target.files[0];if(!file)return;
   const preview=document.getElementById('meal-preview');
-  const reader=new FileReader();
-  reader.onload=async(ev)=>{
-    preview.src=ev.target.result;preview.style.display='block';
-    mealImg64=ev.target.result.split(',')[1];
-    mealImgType=file.type;
-    const fb=document.getElementById('meal-fb-box');
+  const compressed=await compressImage(file);
+  preview.src=compressed;preview.style.display='block';
+  mealImg64=compressed.split(',')[1];
+  mealImgType='image/jpeg';
+  const fb=document.getElementById('meal-fb-box');
     const fbText=document.getElementById('meal-fb-text');
     fb.style.display='block';
     fbText.innerHTML='<div class="dots"><span></span><span></span><span></span></div>';
@@ -1064,8 +1092,6 @@ Be realistic with estimates. Base on typical serving sizes.`;
       if(d.description&&!document.getElementById('m-desc').value) document.getElementById('m-desc').value=d.description;
       fbText.textContent='✓ Macros estimated from photo — review and edit if needed!';
     }catch{fbText.textContent='Couldn\'t auto-parse — please review the numbers below.';}
-  };
-  reader.readAsDataURL(file);
 }
 
 async function saveMeal(){
